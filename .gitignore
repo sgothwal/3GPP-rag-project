@@ -26,7 +26,7 @@ env/
 # OS
 .DS_Store
 
-
+final_data.json
 
 # Qdrant local storage (if using a bind-mounted volume from docker-compose)
 qdrant_storage/

@@ -77,8 +77,9 @@ python backend/partition_chunking.py
 ```
 This reads every `.docx` file in `Data/`, partitions it into elements
 (`unstructured`), chunks by section title (`chunk_by_title`), and writes
-`final_data.json` at the project root. Each chunk includes its text, any
-HTML table content, and metadata (`filename`, `chunk_id`, `parent_ids`).
+`final_data.json` at the project root. Each chunk includes its text, a
+list of any HTML table content (a chunk can contain more than one table),
+and metadata (`filename`, `chunk_id`, `parent_ids`).
 
 **Step 2 — embed and upsert into Qdrant:**
 ```bash
@@ -119,13 +120,17 @@ curl -X POST http://localhost:8000/ask \
 Example response:
 ```json
 {
-  "answer": "According to TS 22.001 (section A.1), the Information transfer rate attribute describes the rate at which information is transferred..."
+  "answer": "According to TS 22.001 (section A.1), the Information transfer rate attribute describes the rate at which information is transferred...",
+  "file_name": ["22001-a00.docx"]
 }
 ```
 
 The answer always mentions the source file and section directly in the
-text — there are no separate citation fields in the response, since the
-generation step is instructed to include that information inline.
+answer text as well, in addition to the `file_name` field, since the
+generation prompt requires both. `file_name` is guaranteed to be an empty
+list when the answer is a "cannot find" response — it only lists files
+that were actually used to produce a real answer, not files that were
+retrieved but ultimately not used.
 
 **An out-of-corpus question:**
 ```bash
@@ -135,7 +140,8 @@ curl -X POST http://localhost:8000/ask \
 ```
 ```json
 {
-  "answer": "Sorry, I couldn't find anything relevant to that in the available documents."
+  "answer": "Sorry, I couldn't find anything relevant to that in the available documents.",
+  "file_name": []
 }
 ```
 
@@ -147,15 +153,36 @@ curl -X POST http://localhost:8000/ask \
    Qdrant, `k=15`, filtered to results scoring above `0.2`.
 2. **`rerank`** — the retrieved chunks are reranked with Cohere's
    `rerank-english-v3.0`, keeping the top 8 most relevant.
-3. **`generate`** — the top chunks are passed to Gemini with structured
-   output, which writes a grounded answer and reports which chunk IDs
-   it actually used. The prompt requires the filename (and section,
-   where available) to always be mentioned in the answer text, and
-   requires a "sorry, I couldn't find anything" response when no chunk
-   answers the question.
+3. **`generate`** — the top chunks (including any table content, since a
+   chunk can contain more than one table) are passed to Gemini with
+   structured output, which writes a grounded answer and reports which
+   file(s) it actually used (`file_name`). The prompt requires the
+   filename (and section, where available) to always be mentioned in the
+   answer text, requires an empty `file_name` list on a "cannot find"
+   response, and requires a "sorry, I couldn't find anything" response
+   when no chunk answers the question.
 
 If retrieval returns no chunks above the relevance threshold, the API
 short-circuits and returns the "not found" message directly — this also
 avoids a real crash risk, since Cohere's rerank endpoint returns a 400
 error on an empty document list.
 
+## Known limitations
+
+- **Long reference-list sections can be split across chunk boundaries.**
+  `partition_chunking.py` chunks by section title with a fixed character
+  limit (`max_characters=1200`). Sections that are long, flat enumerations
+  with no sub-headings — most notably "Normative references" lists with
+  many entries — can get split into several chunks. If the specific
+  reference a question asks about lands in a chunk that isn't retrieved,
+  the system correctly reports it can't find an answer rather than
+  guessing, but the answer may be marked "not found" even though the
+  fact technically exists elsewhere in the document. This affected 2 of
+  15 self-test questions. A fix (routing reference-list sections through
+  a separate, much higher character limit so they stay in one chunk) was
+  identified but not implemented, given time constraints.
+- No authentication on the API — out of scope for this project.
+- Retrieval uses a fixed `k=15` → reranked to top 8; not dynamically
+  adjusted based on query type.
+- See `self_test.json` for the specific questions tested, expected
+  citations, and pass/fail notes.

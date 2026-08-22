@@ -54,16 +54,20 @@ def genereate(chunks,user_query)->str:
     
     class RAGResponse(BaseModel):
         answer: str=Field(description="answer to question")
-        file_name:list[str]=Field(description="name of file(s) used for answering the question")
-    context="\n\n\n".join([f"Page Content:{result[0].page_content}\n Parent IDs:{result[0].metadata['parent_ids']}\n File Location:{result[0].metadata['filename']}\n Chunk ID:{result[0].metadata['chunk_id']}"
-                        for result in chunks])
-    SYSTEM_PROMPT=f"""
-    You are a helpful AI assistant who answers user query based on available context, retrieved from .docx file.You're provided with chunk text and table in html format if any
-    You should ONLY ans the user based on the following context and help user navigate to the right element ,ALWAYS mention file name , if u have name/number of section from where chunk is found mention that too. IF u find no chunk matching the query ONLY send sorry but u didn't find anything 
-    User Query {user_query} \n
-    Context
-    {context}
-    """
+        file_name:list[str]=Field(description="name of file(s) used for answering the question.Must be an empty list if no answer was found.")
+    context = "\n\n\n".join([
+    f"Page Content:{result[0].page_content}\n"
+    + (f"Tables (HTML):{'\n'.join(result[0].metadata['table'])}\n" if result[0].metadata.get('table') else "")
+    + f"File Location:{result[0].metadata['filename']}\n"
+    for result in chunks
+])
+    SYSTEM_PROMPT = f"""
+You are a helpful AI assistant who answers user query based on available context, retrieved from .docx file. You're provided with chunk text and table in html format if any
+You should ONLY answer the user based on the following context and help user navigate to the right element, ALWAYS mention file name, IF you find no chunk matching the query ONLY send sorry but you didn't find anything, **and set file_name to an empty list in that case since no chunk was actually used**
+User Query {user_query} \n
+Context
+{context}
+"""
    
     llm=ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite")
     structred_llm=llm.with_structured_output(RAGResponse)

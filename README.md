@@ -120,8 +120,13 @@ curl -X POST http://localhost:8000/ask \
 Example response:
 ```json
 {
+<<<<<<< HEAD
   "answer": "According to TS 22.001 (section A.1), the Information transfer rate attribute describes the rate at which information is transferred...",
   "file_name": ["22001-a00.docx"]
+=======
+  "answer": "According to TS 22.001 (section A.1), the Information transfer rate attribute describes the rate at which information is transferred..."
+"filename":[]
+>>>>>>> 6f9e201a70e6c8918693e62d85cf26355684af83
 }
 ```
 
